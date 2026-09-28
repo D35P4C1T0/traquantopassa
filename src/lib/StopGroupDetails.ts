@@ -5,6 +5,9 @@ export default interface StopGroupDetails {
 	code: string;
 	canonicalSlug: string;
 	lastUpdatedAt: Date;
+	stale: boolean;
+	partial?: boolean;
+	metadataStale?: boolean;
 	directions: StopDirection[];
 	trainStationSlug: string | null;
 }

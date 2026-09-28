@@ -1,31 +1,26 @@
 import { env } from '$env/dynamic/private';
-import NodeCache from 'node-cache';
+import { ResourceCache } from './resource-cache';
+import { httpOrigin } from './deployment';
+import { fetchChecked, isRecord, text, finite } from './upstream';
 import stopsRankingFallback from '$lib/server/stops-ranking-fallback';
 import * as logger from '$lib/logger';
 import type { StopGroup } from '$lib/StopGroup';
 import { elapsed } from '$lib/server/time-helpers';
 
-const rankingCacheKey = 'stop-rankings';
-
-const cache = new NodeCache({
-	stdTTL: 24 * 60 * 60, // 24 hours
-});
-
+// Cache both successful rankings and fallback for five minutes.
+const cache = new ResourceCache<Record<string, number>>(300_000, 300_000, 1);
 export async function getRankings(stops: StopGroup[]) {
-	let rankings = cache.get<Record<string, number>>(rankingCacheKey);
-	if (rankings) {
-		return rankings;
-	}
-
-	try {
-		rankings = await loadMostVisitedStops(stops);
-		cache.set(rankingCacheKey, rankings);
-	} catch (e) {
-		logger.error('Error while fetching most visited stops', e);
-		rankings = stopsRankingFallback;
-	}
-
-	return rankings;
+	if (!env.GOATCOUNTER_API_KEY || !env.GOATCOUNTER_URL) return stopsRankingFallback;
+	return (
+		await cache.get('rankings', async () => {
+			try {
+				return await loadMostVisitedStops(stops);
+			} catch (error) {
+				logger.error('Error while fetching most visited stops', error);
+				return stopsRankingFallback;
+			}
+		})
+	).value;
 }
 
 async function loadMostVisitedStops(stops: StopGroup[]): Promise<Record<string, number>> {
@@ -34,25 +29,30 @@ async function loadMostVisitedStops(stops: StopGroup[]): Promise<Record<string, 
 	start.setDate(start.getDate() - 30);
 
 	const url =
-		'https://traquantopassa.goatcounter.com/api/v0/stats/hits?start=' + start.toISOString();
+		httpOrigin(env.GOATCOUNTER_URL!, 'GOATCOUNTER_URL') +
+		'/api/v0/stats/hits?start=' +
+		encodeURIComponent(start.toISOString());
 
 	logger.info('Fetching stops ranking from API');
 	const startTs = performance.now();
 
-	const response = await fetch(url, {
+	const response = await fetchChecked(url, {
 		headers: {
 			Authorization: 'Bearer ' + env.GOATCOUNTER_API_KEY,
 		},
 		signal: AbortSignal.timeout(3 * 1000),
 	});
 
-	const data = await response.json();
+	const data: unknown = await response.json();
+	if (!isRecord(data) || !Array.isArray(data.hits)) throw new Error('Invalid rankings');
 
 	logger.info(`Fetched stops ranking in ${elapsed(startTs)} ms`);
 
 	const rankings: Record<string, number> = {};
 
 	for (const hit of data.hits) {
+		if (!isRecord(hit) || !text(hit.path) || !finite(hit.count))
+			throw new Error('Invalid ranking entry');
 		// Extract slug from URL
 		const match = hit.path.match(/^\/\w+/);
 		if (match) {

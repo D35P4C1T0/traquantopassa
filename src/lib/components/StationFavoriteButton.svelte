@@ -20,27 +20,28 @@
 		event.preventDefault();
 		if (!isFavorite) {
 			favorites.addFavorite(stationId);
-			starElement?.classList.add('animate-spin-forward');
+			if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+				starElement?.classList.add('animate-spin-forward');
 		} else {
 			favorites.removeFavorite(stationId);
-			starElement?.classList.add('animate-spin-backward');
+			if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+				starElement?.classList.add('animate-spin-backward');
 		}
-		starElement?.addEventListener(
-			'animationend',
-			() => {
-				starElement?.classList.remove('animate-spin-forward', 'animate-spin-backward');
-			},
-			{
-				once: true, // prevent memory leaks
-			},
-		);
 	}
 </script>
 
-<button class={className} onclick={toggleFavorite}>
+<button
+	type="button"
+	class={className}
+	onclick={toggleFavorite}
+	aria-pressed={isFavorite}
+	aria-label={isFavorite ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}
+>
 	<img
+		onanimationend={() =>
+			starElement?.classList.remove('animate-spin-forward', 'animate-spin-backward')}
 		src={isFavorite ? starFilled : star}
-		alt={isFavorite ? 'Starred' : 'Unstarred'}
+		alt=""
 		class="size-6"
 		bind:this={starElement}
 	/>

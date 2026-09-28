@@ -1,0 +1,15 @@
+{
+	admin off
+	http_port 8080
+	https_port 8443
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
+
+http://:8081 {
+	bind 127.0.0.1
+	respond /healthz "ok" 200
+}

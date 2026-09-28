@@ -1,3 +1,4 @@
+import { readTab, writeTab } from './safe-storage';
 import { browser } from '$app/environment';
 
 const LOCAL_STORAGE_KEY = 'tqp_default_tab';
@@ -9,14 +10,9 @@ export function getDefaultTab(): Tab {
 		return 'all';
 	}
 
-	const tab = localStorage.getItem(LOCAL_STORAGE_KEY);
-	if (!tab) {
-		return 'all';
-	}
-
-	return tab as Tab;
+	return readTab<Tab>(LOCAL_STORAGE_KEY, ['all', 'ranked', 'filter', 'favorites'], 'all');
 }
 
 export function setDefaultTab(tab: Tab) {
-	localStorage.setItem(LOCAL_STORAGE_KEY, tab);
+	writeTab(LOCAL_STORAGE_KEY, tab);
 }

@@ -9,9 +9,10 @@
 
 	interface Props {
 		trip: Trip;
+		stale?: boolean;
 	}
 
-	let { trip }: Props = $props();
+	let { trip, stale = false }: Props = $props();
 
 	let expandedTrip = getContext<ExpandedTripState>('expandedTrip');
 	let expanded = $derived(expandedTrip.id === trip.id);
@@ -21,21 +22,19 @@
 	}
 </script>
 
-<div
-	class="mb-2 flex cursor-pointer items-center gap-x-4"
-	role="button"
+<button
+	type="button"
+	class="mb-2 flex w-full cursor-pointer items-center gap-x-4 text-left"
 	aria-expanded={expanded}
 	onclick={() => toggle()}
-	tabindex="0"
-	onkeydown={(e) => (e.key === 'Enter' || e.key === ' ' ? toggle() : null)}
 >
-	<div
+	<span
 		class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-xl font-bold select-none"
 		style="background-color: {trip.routeColor}"
 	>
 		{trip.routeName}
-	</div>
-	<div class="grow overflow-hidden whitespace-nowrap">
+	</span>
+	<span class="grow overflow-hidden whitespace-nowrap">
 		<span
 			class="flex items-center gap-x-2 overflow-hidden text-lg leading-tight text-ellipsis whitespace-nowrap"
 			class:text-neutral-500={trip.isEndOfRouteForUser}
@@ -76,10 +75,12 @@
 				{/if}
 			{/if}
 		</span>
-	</div>
+	</span>
 	<PulsingMinutes minutes={trip.minutes} dimmed={trip.isEndOfRouteForUser} />
-	<LiveTripAnimation live={trip.delay != null ? (trip.isOutdated ? 'yellow' : 'green') : null} />
-</div>
+	<LiveTripAnimation
+		live={trip.delay != null ? (trip.isOutdated || stale ? 'yellow' : 'green') : null}
+	/>
+</button>
 
 {#if expanded}
 	<div transition:slide={{ duration: 300 }}>

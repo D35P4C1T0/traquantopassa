@@ -1,0 +1,38 @@
+{
+	"stops": [
+		{
+			"stopId": 1,
+			"stopName": "Stazione Test",
+			"town": "Trento",
+			"stopCode": "90001n",
+			"stopLat": 46.07,
+			"stopLon": 11.12,
+			"routes": [{ "routeId": 5 }]
+		}
+	],
+	"routes": [
+		{
+			"routeId": 5,
+			"routeShortName": "5",
+			"routeLongName": "Centro - Povo",
+			"routeColor": "123456"
+		}
+	],
+	"trips": [
+		{
+			"tripId": "test-trip",
+			"routeId": 5,
+			"oraArrivoEffettivaAFermataSelezionata": "2026-09-28T12:10:00+02:00",
+			"oraArrivoProgrammataAFermataSelezionata": "2026-09-28T12:08:00+02:00",
+			"stopNext": 1,
+			"lastSequenceDetection": 1,
+			"delay": 2,
+			"lastEventRecivedAt": "2026-09-28T12:00:00+02:00",
+			"tripHeadsign": "Povo",
+			"stopTimes": [
+				{ "stopId": 1, "stopSequence": 1, "arrivalTime": "12:08:00" },
+				{ "stopId": 2, "stopSequence": 2, "arrivalTime": "12:20:00" }
+			]
+		}
+	]
+}

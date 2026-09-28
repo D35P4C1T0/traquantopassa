@@ -1,0 +1,34 @@
+name: traquantopassa
+
+services:
+  app:
+    image: traquantopassa:${IMAGE_TAG:-local}
+    build:
+      context: .
+      target: runtime
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    pids_limit: 100
+    mem_limit: ${APP_MEMORY_LIMIT:-512m}
+    cpus: ${APP_CPUS:-1.0}
+    stop_grace_period: 30s
+    ports:
+      - '127.0.0.1:${APP_PORT:-3000}:3000'
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      ORIGIN: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      API_BASE_URL: ${API_BASE_URL:-https://app-tpl.tndigit.it}
+      API_USERNAME: ${API_USERNAME:-}
+      API_PASSWORD: ${API_PASSWORD:-}
+      GOATCOUNTER_URL: ${GOATCOUNTER_URL:-}
+      GOATCOUNTER_API_KEY: ${GOATCOUNTER_API_KEY:-}
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

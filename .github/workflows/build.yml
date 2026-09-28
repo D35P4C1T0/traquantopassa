@@ -6,25 +6,32 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build and test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '24.x'
-          cache: npm
-      - name: Install dependencies
-        run: npm install
-      - name: Lint
-        run: npm run lint
-      - name: Run Svelte checks
-        env:
-          PUBLIC_BASE_URL: https://traquantopassa.in
-        run: npm run check
-      - name: Run tests
-        run: npm run test
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm smoke
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:browser
+      - run: node --test docker/entrypoint.test.mjs
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t traquantopassa:docker-test .
+      - run: sh scripts/docker-smoke.sh

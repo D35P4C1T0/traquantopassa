@@ -1,0 +1,29 @@
+# Requires Docker Compose 2.24.4+ (or v5) for !reset.
+# docker compose -f compose.yaml -f compose.traefik.yaml up -d --build --wait
+services:
+  app:
+    ports: !reset []
+    environment:
+      PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN to your public hostname}
+      ORIGIN: https://${DOMAIN:?Set DOMAIN to your public hostname}
+      ADDRESS_HEADER: X-Forwarded-For
+      XFF_DEPTH: '1'
+    networks:
+      - default
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.${TRAEFIK_ROUTER:-traquantopassa}.rule=Host(`${DOMAIN:?Set DOMAIN to your public hostname}`)
+      - traefik.http.routers.${TRAEFIK_ROUTER:-traquantopassa}.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.${TRAEFIK_ROUTER:-traquantopassa}.tls=true
+      - traefik.http.routers.${TRAEFIK_ROUTER:-traquantopassa}.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-}
+      - traefik.http.routers.${TRAEFIK_ROUTER:-traquantopassa}.service=${TRAEFIK_ROUTER:-traquantopassa}
+      - traefik.http.services.${TRAEFIK_ROUTER:-traquantopassa}.loadbalancer.server.port=3000
+      - traefik.http.services.${TRAEFIK_ROUTER:-traquantopassa}.loadbalancer.healthcheck.path=/healthz
+      - traefik.http.services.${TRAEFIK_ROUTER:-traquantopassa}.loadbalancer.healthcheck.interval=30s
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-proxy}

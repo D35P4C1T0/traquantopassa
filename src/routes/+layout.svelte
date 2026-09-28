@@ -9,9 +9,10 @@
 
 	interface Props {
 		children?: Snippet;
+		data: import('./$types').LayoutData;
 	}
 
-	let { children }: Props = $props();
+	let { children, data }: Props = $props();
 
 	let topbar: Topbar | undefined = $state();
 
@@ -35,7 +36,15 @@
 	setContext('favorites', favoriteStopsStore());
 </script>
 
-<!--<Banner />-->
+<svelte:head>
+	{#if data.analyticsUrl}
+		<script
+			defer
+			src="https://gc.zgo.at/count.js"
+			data-goatcounter="{data.analyticsUrl}/count"
+		></script>
+	{/if}
+</svelte:head>
 
 <div class="mx-auto mt-10 max-w-[600px] px-5">
 	{@render children?.()}

@@ -17,7 +17,7 @@
 
 	let { data } = $props();
 
-	let activeTab = $state(getDefaultTab());
+	let activeTab = $state<Tab>('all');
 
 	let searchTerm = $state('');
 	let selectedRoute = $state('');
@@ -25,7 +25,8 @@
 
 	let showGeolocationButton = $state(false);
 	let loadingGeolocationData = $state(false);
-	let distances = $state(computeStopsDistances(data.stops));
+	let coordinates = $state<GeolocationCoordinates | null>(null);
+	let distances = $derived(computeStopsDistances(data.stops, coordinates));
 
 	const favorites: FavoriteStops = getContext('favorites');
 
@@ -59,6 +60,7 @@
 	let favoriteStops = $derived(data.stops.filter((x) => favorites.value.includes(x.code)));
 
 	onMount(async () => {
+		activeTab = getDefaultTab();
 		if (await isGeolocationGranted()) {
 			await updatePosition();
 		} else {
@@ -81,7 +83,7 @@
 			loadingGeolocationData = false;
 		}
 
-		distances = computeStopsDistances(data.stops, position.coords);
+		coordinates = position.coords;
 	}
 
 	function switchTab(tab: Tab) {
@@ -113,6 +115,9 @@
 </header>
 
 <main>
+	{#if data.metadataStale}<p role="status" class="text-amber-300">
+			Elenco fermate o linee non aggiornato. Riprova più tardi.
+		</p>{/if}
 	<div class="mt-8 flex justify-center">
 		<ModesSwitch isBus={true} />
 	</div>
@@ -159,6 +164,7 @@
 					<div class="flex basis-1/2 gap-x-2">
 						<input
 							type="search"
+							aria-label="Cerca per nome o codice"
 							placeholder="🔍 Cerca fermata..."
 							class="w-full rounded-md bg-neutral-800 px-3.5 py-2 text-neutral-100 focus:outline-2 focus:outline-neutral-700"
 							bind:value={searchTerm}
@@ -172,6 +178,7 @@
 					</div>
 
 					<select
+						aria-label="Filtra per linea o ferrovia"
 						bind:value={selectedRoute}
 						class="w-full basis-1/2 rounded-md bg-neutral-800 px-3.5 py-2 text-neutral-100 focus:outline-2 focus:outline-neutral-700"
 					>

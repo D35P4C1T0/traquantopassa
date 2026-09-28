@@ -1,0 +1,47 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { startRefresh } from './refresh';
+afterEach(() => {
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
+it('pauses while hidden, refreshes on return, prevents overlap and cleans up', async () => {
+	vi.useFakeTimers();
+	const document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+	vi.stubGlobal('document', document);
+	let finish!: () => void;
+	const refresh = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+	const report = vi.fn();
+	const stop = startRefresh(refresh, report, 100);
+	await vi.advanceTimersByTimeAsync(100);
+	expect(refresh).toHaveBeenCalledOnce();
+	document.visibilityState = 'hidden';
+	document.dispatchEvent(new Event('visibilitychange'));
+	document.visibilityState = 'visible';
+	document.dispatchEvent(new Event('visibilitychange'));
+	expect(refresh).toHaveBeenCalledOnce();
+	finish();
+	await vi.advanceTimersByTimeAsync(0);
+	document.visibilityState = 'hidden';
+	document.dispatchEvent(new Event('visibilitychange'));
+	await vi.advanceTimersByTimeAsync(500);
+	expect(refresh).toHaveBeenCalledOnce();
+	document.visibilityState = 'visible';
+	document.dispatchEvent(new Event('visibilitychange'));
+	expect(refresh).toHaveBeenCalledTimes(2);
+	stop();
+	finish();
+	await vi.advanceTimersByTimeAsync(500);
+	expect(refresh).toHaveBeenCalledTimes(2);
+});
+it('reports failure and schedules recovery', async () => {
+	vi.useFakeTimers();
+	vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+	const refresh = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined);
+	const report = vi.fn();
+	const stop = startRefresh(refresh, report, 100);
+	await vi.advanceTimersByTimeAsync(100);
+	expect(report).toHaveBeenLastCalledWith(true);
+	await vi.advanceTimersByTimeAsync(100);
+	expect(report).toHaveBeenLastCalledWith(false);
+	stop();
+});

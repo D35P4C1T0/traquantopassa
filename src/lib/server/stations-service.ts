@@ -6,31 +6,33 @@ interface LazyStation extends Omit<Station, 'id'> {
 	id: string | null;
 }
 
-const stationMap = new Map<string, Station | LazyStation>();
+import { ResourceCache, METADATA_FRESH_MS, METADATA_MAX_AGE_MS } from './resource-cache';
+const curated = new Map(stationsList.map((station) => [station.slug, station]));
+const catalogCache = new ResourceCache<Map<string, LazyStation>>(
+	METADATA_FRESH_MS,
+	METADATA_MAX_AGE_MS,
+	1,
+);
+const idCache = new ResourceCache<string | null>(60_000, 60_000);
 
 async function getStationMap() {
-	if (stationMap.size != 0) {
-		return stationMap;
-	}
-
-	for (const station of stationsList) {
-		stationMap.set(station.slug, station);
-	}
-
-	for (const station of await getStations()) {
-		if (stationMap.has(station.slug)) {
-			continue;
-		}
-		stationMap.set(station.slug, {
-			id: null,
-			slug: station.slug,
-			name: station.name,
-			coordinates: station.coordinates,
-			railways: [],
-		} satisfies LazyStation);
-	}
-
-	return stationMap;
+	return (
+		await catalogCache.get('catalog', async () => {
+			const stations = await getStations();
+			return new Map(
+				stations.map((station) => [
+					station.slug,
+					{
+						id: null,
+						slug: station.slug,
+						name: station.name,
+						coordinates: station.coordinates,
+						railways: [],
+					} satisfies LazyStation,
+				]),
+			);
+		})
+	).value;
 }
 
 export function getStationList() {
@@ -48,21 +50,11 @@ export function getRailways() {
 }
 
 export async function getStationBySlug(slug: string): Promise<Station | null> {
-	const stationMap = await getStationMap();
-	const station = stationMap.get(slug);
-	if (!station) {
-		return null;
-	}
-
-	if (station.id == null) {
-		const id = await getIdFromSlug(slug);
-		if (id == null) {
-			// If we cannot find it on RFI, delete the entry to avoid bothering RFI too much.
-			stationMap.delete(slug);
-			return null;
-		}
-		station.id = id;
-	}
-
-	return station as Station;
+	const known = curated.get(slug);
+	if (known) return known;
+	if (!/^[a-zA-Z0-9_-]+$/.test(slug)) return null;
+	const station = (await getStationMap()).get(slug);
+	if (!station) return null;
+	const result = await idCache.get(slug, () => getIdFromSlug(slug));
+	return result.value === null ? null : { ...station, id: result.value };
 }

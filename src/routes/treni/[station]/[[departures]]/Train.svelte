@@ -20,20 +20,18 @@
 	}
 </script>
 
-<div
-	class="mb-2 flex cursor-pointer items-center gap-x-3 sm:gap-x-4"
-	role="button"
+<button
+	type="button"
+	class="mb-2 flex w-full cursor-pointer items-center gap-x-3 text-left sm:gap-x-4"
 	aria-expanded={expanded}
 	onclick={() => toggle()}
-	tabindex="0"
-	onkeydown={(e) => (e.key === 'Enter' || e.key === ' ' ? toggle() : null)}
 >
-	<div
+	<span
 		class="flex h-10 w-16 shrink-0 items-center justify-center rounded-md bg-neutral-600 text-lg font-semibold sm:w-20"
 	>
 		{train.time}
-	</div>
-	<div class="grow overflow-hidden whitespace-nowrap">
+	</span>
+	<span class="grow overflow-hidden whitespace-nowrap">
 		<span
 			class="block overflow-hidden text-lg leading-tight font-medium text-ellipsis whitespace-nowrap"
 		>
@@ -70,14 +68,14 @@
 				• {train.category}
 			{/if}
 		</span>
-	</div>
-	<div
+	</span>
+	<span
 		class="text-right font-semibold whitespace-nowrap text-red-600"
 		class:text-xl={train.isDelayed}
 	>
 		{train.delay}
-	</div>
-</div>
+	</span>
+</button>
 
 {#if expanded}
 	<div transition:slide={{ duration: 300 }}>

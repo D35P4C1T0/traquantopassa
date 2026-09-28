@@ -5,6 +5,9 @@ export default interface StationDetails {
 	name: string;
 	canonicalSlug: string;
 	lastUpdatedAt: Date;
+	stale: boolean;
+	partial?: boolean;
+	metadataStale?: boolean;
 	trains: Train[];
 	isDeparture: boolean;
 	stopSlug: string | null;

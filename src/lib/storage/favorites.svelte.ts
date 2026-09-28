@@ -1,67 +1,34 @@
 import { browser } from '$app/environment';
+import { readStored, writeStored, stringArray } from './safe-storage';
 
-const STOPS_KEY = 'tqp_stops_favorites';
-const STATIONS_KEY = 'tqp_stations_favorites';
-
-export class LocalStore<T> {
-	value = $state<T>() as T;
-	key = '';
-	#initialized = $state(false);
-
-	constructor(key: string, value: T) {
-		this.key = key;
-		this.value = value;
-
+class Favorites {
+	value = $state<string[]>([]);
+	private initialized = $state(false);
+	constructor(key: string) {
 		if (browser) {
-			// Load from localStorage after hydration completes
 			$effect(() => {
-				if (!this.#initialized) {
-					const item = localStorage.getItem(key);
-					if (item) this.value = this.deserialize(item);
-					this.#initialized = true;
+				if (!this.initialized) {
+					this.value = [...new Set(readStored(key, [], stringArray))];
+					this.initialized = true;
 				}
 			});
-
-			// Save to localStorage on changes (but not during initial load)
 			$effect(() => {
-				if (this.#initialized) {
-					localStorage.setItem(this.key, this.serialize(this.value));
-				}
+				if (this.initialized) writeStored(key, this.value);
 			});
 		}
 	}
-
-	serialize(value: T): string {
-		return JSON.stringify(value);
-	}
-
-	deserialize(item: string): T {
-		return JSON.parse(item);
-	}
-}
-
-export class FavoriteStations extends LocalStore<string[]> {
-	addFavorite = (stationId: string) => {
-		this.value.push(stationId);
+	addFavorite = (id: string) => {
+		if (!this.value.includes(id)) this.value.push(id);
 	};
-	removeFavorite = (stationId: string) => {
-		this.value.splice(this.value.indexOf(stationId), 1);
+	removeFavorite = (id: string) => {
+		this.value = this.value.filter((value) => value !== id);
 	};
 }
-
-export function favoriteStationsStore(): FavoriteStations {
-	return new FavoriteStations(STATIONS_KEY, []);
+export class FavoriteStops extends Favorites {}
+export class FavoriteStations extends Favorites {}
+export function favoriteStopsStore() {
+	return new FavoriteStops('tqp_stops_favorites');
 }
-
-export class FavoriteStops extends LocalStore<string[]> {
-	addFavorite = (stationId: string) => {
-		this.value.push(stationId);
-	};
-	removeFavorite = (stationId: string) => {
-		this.value.splice(this.value.indexOf(stationId), 1);
-	};
-}
-
-export function favoriteStopsStore(): FavoriteStops {
-	return new FavoriteStops(STOPS_KEY, []);
+export function favoriteStationsStore() {
+	return new FavoriteStations('tqp_stations_favorites');
 }

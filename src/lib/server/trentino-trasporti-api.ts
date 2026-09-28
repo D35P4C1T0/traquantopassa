@@ -1,20 +1,24 @@
 import { env } from '$env/dynamic/private';
 import * as logger from '$lib/logger';
 import { elapsed } from '$lib/server/time-helpers';
-import { building } from '$app/environment';
+import { httpOrigin } from './deployment';
+import { fetchChecked, isRecord, finite, text, validDate, arrayOf } from './upstream';
 
-const BASE_URL = env.API_BASE_URL;
-
-if (!building && !BASE_URL) {
-	throw new Error('Missing API_BASE_URL environment variable');
+function credentials() {
+	for (const key of ['API_BASE_URL', 'API_USERNAME', 'API_PASSWORD']) {
+		if (!env[key]) throw new Error(`Missing ${key} environment variable`);
+	}
+	return {
+		base: httpOrigin(env.API_BASE_URL!, 'API_BASE_URL'),
+		authorization:
+			'Basic ' + Buffer.from(env.API_USERNAME + ':' + env.API_PASSWORD).toString('base64'),
+	};
 }
-
-const BASIC_AUTH = Buffer.from(env.API_USERNAME + ':' + env.API_PASSWORD).toString('base64');
 
 export interface ApiStop {
 	stopId: number;
 	stopName: string;
-	town: string;
+	town: string | null;
 	stopCode: string;
 	stopLat: number;
 	stopLon: number;
@@ -53,7 +57,7 @@ function filterStops(apiStops: ApiStop[]) {
 			// Check the stopcode format to avoid stuff like Funivia Trento-Sardagna
 			/^[0-9]+[a-z-]*$/.test(stop.stopCode) &&
 			// Ensure the stop has routes and it's not disuesed
-			stop.routes &&
+			stop.routes.length > 0 &&
 			(stop.town === 'Trento' ||
 				stop.town === 'Lavis' ||
 				// Some stops in Trento are not tagged with a town, so we use a
@@ -72,14 +76,23 @@ export async function getStops() {
 	logger.info('Fetching stops from API');
 	const start = performance.now();
 
-	const res = await fetch(BASE_URL + path, {
+	const config = credentials();
+	const res = await fetchChecked(config.base + path, {
 		headers: {
-			Authorization: 'Basic ' + BASIC_AUTH,
+			Authorization: config.authorization,
 		},
 		signal: AbortSignal.timeout(10 * 1000),
 	});
 
-	const data: ApiStop[] = await res.json();
+	const raw: unknown = await res.json();
+	if (!Array.isArray(raw)) throw new Error('Invalid stops payload');
+	// Disused stops may omit routes; normalize them before validating metadata.
+	const data = arrayOf(
+		raw.map((stop: unknown) =>
+			isRecord(stop) && stop.routes == null ? { ...stop, routes: [] } : stop,
+		),
+		isApiStop,
+	);
 
 	logger.info(`Fetched stops in ${elapsed(start)} ms`);
 
@@ -92,14 +105,15 @@ export async function getRoutes() {
 	logger.info('Fetching routes from API');
 	const start = performance.now();
 
-	const res = await fetch(BASE_URL + path, {
+	const config = credentials();
+	const res = await fetchChecked(config.base + path, {
 		headers: {
-			Authorization: 'Basic ' + BASIC_AUTH,
+			Authorization: config.authorization,
 		},
 		signal: AbortSignal.timeout(10 * 1000),
 	});
 
-	const data: ApiRoute[] = await res.json();
+	const data = arrayOf(await res.json(), isApiRoute);
 
 	logger.info(`Fetched routes in ${elapsed(start)} ms`);
 
@@ -112,16 +126,72 @@ export async function getTrips(stopId: number, limit: number) {
 	logger.info(`Fetching trips for ${stopId}`);
 	const start = performance.now();
 
-	const res = await fetch(BASE_URL + path, {
+	const config = credentials();
+	const res = await fetchChecked(config.base + path, {
 		headers: {
-			Authorization: 'Basic ' + BASIC_AUTH,
+			Authorization: config.authorization,
 		},
 		signal: AbortSignal.timeout(6 * 1000),
 	});
 
-	const data: ApiTrip[] = await res.json();
+	const data: unknown = await res.json();
+	if (!Array.isArray(data)) throw new Error('Invalid trips payload');
 
 	logger.info(`Fetched trips for ${stopId} in ${elapsed(start)} ms`);
 
 	return data;
+}
+
+export function isApiStop(value: unknown): value is ApiStop {
+	return (
+		isRecord(value) &&
+		finite(value.stopId) &&
+		text(value.stopName) &&
+		(value.town === null || text(value.town)) &&
+		text(value.stopCode) &&
+		finite(value.stopLat) &&
+		Math.abs(value.stopLat) <= 90 &&
+		finite(value.stopLon) &&
+		Math.abs(value.stopLon) <= 180 &&
+		Array.isArray(value.routes) &&
+		value.routes.every((route) => isRecord(route) && finite(route.routeId))
+	);
+}
+export function isApiRoute(value: unknown): value is ApiRoute {
+	return (
+		isRecord(value) &&
+		finite(value.routeId) &&
+		text(value.routeShortName) &&
+		text(value.routeLongName) &&
+		(value.routeColor === null ||
+			value.routeColor === '' ||
+			(text(value.routeColor) && /^[a-f0-9]{6}$/i.test(value.routeColor)))
+	);
+}
+export function isApiTrip(value: unknown): value is ApiTrip {
+	return (
+		isRecord(value) &&
+		text(value.tripId) &&
+		finite(value.routeId) &&
+		validDate(value.oraArrivoEffettivaAFermataSelezionata) &&
+		validDate(value.oraArrivoProgrammataAFermataSelezionata) &&
+		finite(value.lastSequenceDetection) &&
+		Number.isInteger(value.lastSequenceDetection) &&
+		value.lastSequenceDetection >= 0 &&
+		(value.delay === null || finite(value.delay)) &&
+		(value.delay === null || validDate(value.lastEventRecivedAt)) &&
+		text(value.tripHeadsign) &&
+		Array.isArray(value.stopTimes) &&
+		value.stopTimes.length > 0 &&
+		value.stopTimes.every(
+			(stop) =>
+				isRecord(stop) &&
+				finite(stop.stopId) &&
+				finite(stop.stopSequence) &&
+				Number.isInteger(stop.stopSequence) &&
+				stop.stopSequence > 0 &&
+				text(stop.arrivalTime) &&
+				/^\d{2}:\d{2}:\d{2}$/.test(stop.arrivalTime),
+		)
+	);
 }

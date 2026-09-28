@@ -1,0 +1,20 @@
+# Test-only fixture server. Never include this overlay in a deployment.
+services:
+  app:
+    image: traquantopassa:docker-test
+    ports: !reset []
+    restart: 'no'
+    environment:
+      PUBLIC_BASE_URL: https://transport.example
+      ORIGIN: https://transport.example
+      ADDRESS_HEADER: X-Forwarded-For
+      XFF_DEPTH: '1'
+      API_BASE_URL: https://bus.test
+      API_USERNAME: fixture
+      API_PASSWORD: fixture
+      GOATCOUNTER_URL: ''
+      GOATCOUNTER_API_KEY: ''
+    volumes:
+      - ./tests:/app/tests:ro
+      - ./docker/assert-container.mjs:/app/docker/assert-container.mjs:ro
+    command: [node, --import, ./tests/mock-upstream.mjs, docker/entrypoint.mjs]

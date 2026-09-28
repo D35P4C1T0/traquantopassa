@@ -17,7 +17,7 @@
 
 	let { data } = $props();
 
-	let activeTab = $state(getDefaultTab());
+	let activeTab = $state<Tab>('all');
 
 	let searchTerm = $state('');
 	let selectedRailway = $state('');
@@ -47,6 +47,7 @@
 	let favoriteStations = $derived(data.stations.filter((x) => favorites.value.includes(x.id)));
 
 	onMount(async () => {
+		activeTab = getDefaultTab();
 		if (await isGeolocationGranted()) {
 			await updatePosition();
 		} else {
@@ -141,12 +142,14 @@
 				<div class="mt-4 flex gap-x-4 gap-y-3 max-sm:flex-col">
 					<input
 						type="search"
+						aria-label="Cerca per nome o codice"
 						placeholder="🔍 Cerca stazione..."
 						class="w-full basis-1/2 rounded-md bg-neutral-800 px-3.5 py-2 text-neutral-100 focus:outline-2 focus:outline-neutral-700"
 						bind:value={searchTerm}
 					/>
 
 					<select
+						aria-label="Filtra per linea o ferrovia"
 						bind:value={selectedRailway}
 						class="w-full basis-1/2 rounded-md bg-neutral-800 px-3.5 py-2 text-neutral-100 focus:outline-2 focus:outline-neutral-700"
 					>

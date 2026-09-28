@@ -1,4 +1,4 @@
-import NodeCache from 'node-cache';
+import { ResourceCache, LIVE_FRESH_MS, LIVE_MAX_AGE_MS } from './resource-cache';
 import type { StopDirection } from '$lib/StopDirection';
 import * as api from '$lib/server/trentino-trasporti-api';
 import * as routesService from '$lib/server/routes-service';
@@ -7,113 +7,80 @@ import type { Route } from '$lib/Route';
 import type { Trip, StopTime } from '$lib/Trip';
 import * as logger from '$lib/logger';
 import { getStopName } from '$lib/server/stops-service';
-import CachedItem from '$lib/server/CachedItem';
 
-const cache = new NodeCache();
+interface StoredTrip extends Omit<Trip, 'minutes' | 'isOutdated'> {
+	expectedAt: number;
+	lastLiveAt: number | null;
+}
+interface StoredDirection {
+	name: string;
+	trips: StoredTrip[];
+	partial: boolean;
+}
+const cache = new ResourceCache<StoredDirection>(LIVE_FRESH_MS, LIVE_MAX_AGE_MS);
 
-// Cache is 1s less than refresh time to avoid an issue where the auto refresh
-// sometimes only happens every 1 minute instead of every 30s
-const tripsCacheDurationSeconds = 29;
-
-const defaultLimit = 15;
-const outdatedDataThresholdMillis = 1000 * 60 * 5;
-
-export async function getTrips(stop: Stop): Promise<CachedItem<StopDirection>> {
-	const stopId = stop.id;
-
-	// Return from cache if available
-	let cachedItem = cache.get<CachedItem<StopDirection>>(`trips-${stopId}`);
-	if (cachedItem) {
-		return cachedItem;
-	}
-
-	// Fetch from API
-	logger.info(`Fetching trips for stop ${stopId}`);
-	const apiTrips = await api.getTrips(stopId, defaultLimit);
-	const routes = await routesService.getRoutes();
-
-	const trips = await mapApiTrips(apiTrips, routes, stopId);
-
-	const direction = {
-		name: directionName(stop),
-		trips,
-	} as StopDirection;
-
-	cachedItem = new CachedItem(direction);
-
-	// Save to cache
-	cache.set(`trips-${stopId}`, cachedItem, tripsCacheDurationSeconds);
-
-	return cachedItem;
+export async function getTrips(stop: Stop) {
+	const metadata = await routesService.getRoutesResource();
+	const result = await cache.get(String(stop.id), async () => {
+		const rawTrips = await api.getTrips(stop.id, 15);
+		const mapped = mapApiTrips(rawTrips, metadata.value, stop.id);
+		return { name: directionName(stop), ...mapped };
+	});
+	const direction: StopDirection = {
+		name: result.value.name,
+		trips: result.value.trips.map(({ expectedAt, lastLiveAt, ...trip }) => ({
+			...trip,
+			minutes: Math.max(0, Math.ceil((expectedAt - Date.now()) / 60_000)),
+			isOutdated: lastLiveAt !== null && Date.now() - lastLiveAt > 300_000,
+		})),
+	};
+	return {
+		...result,
+		value: direction,
+		partial: result.value.partial,
+		metadataStale: metadata.stale,
+	};
 }
 
-async function mapApiTrips(apiTrips: api.ApiTrip[], routes: Route[], userStopId: number) {
-	return Promise.all(
-		apiTrips.map(async (trip) => {
-			const route = routes.find((r) => r.id === trip.routeId)!;
-
-			// Compute wait time in minutes
-			const expectedTime = new Date(trip.oraArrivoEffettivaAFermataSelezionata);
-			let minutes = Math.ceil((expectedTime.getTime() - Date.now()) / 1000 / 60);
-			if (minutes < 0) {
-				minutes = 0;
-			}
-
-			const delay = trip.delay;
-
-			const currentStopSequenceNumber = trip.lastSequenceDetection;
-
-			// Check if the last update of real-time data isn't recent enough
-			let isOutdated = false;
-			if (delay != null) {
-				const lastEventDate = new Date(trip.lastEventRecivedAt);
-				isOutdated = Date.now() - lastEventDate.getTime() > outdatedDataThresholdMillis;
-			}
-
-			// Check if the trip will end at the current user stop
-			const endOfRoute = trip.stopTimes.at(-1)!;
-			let isEndOfRouteForUser = endOfRoute.stopId == userStopId;
-			// If this route is a circular route, also make sure that this trip is
-			// for an arrival at the current user stop and not a departure from the stop.
-			// We use two strategies, in this order:
-			// 1. When live data is available, detect if the bus is already beyond the first stop
-			// 2. Check if the expected time at the current stop matches the time of the last stop of the trip
-			if (isEndOfRouteForUser && trip.stopTimes[0].stopId == endOfRoute.stopId) {
-				isEndOfRouteForUser =
-					currentStopSequenceNumber > 1 || formatTime(expectedTime) == endOfRoute.arrivalTime;
-			}
-
-			const userStopSequenceNumber = isEndOfRouteForUser
-				? trip.stopTimes.length
-				: trip.stopTimes.find((stop) => stop.stopId == userStopId)!.stopSequence;
-
-			// Add timestamp to the trip ID since there could be multiple trips with the same ID (e.g. hourly trips)
-			const id =
-				trip.tripId + '-' + new Date(trip.oraArrivoProgrammataAFermataSelezionata).getTime();
-
-			const stopTimes = trip.stopTimes.map((stopTime) => {
-				return {
-					name: getStopName(stopTime.stopId),
-					// Time is returned with seconds that are always 00 so we omit them
-					time: stopTime.arrivalTime.substring(0, 5),
-				} satisfies StopTime as StopTime;
-			});
-
-			return {
-				id,
-				routeName: route.name,
-				routeColor: route.color,
-				destination: trip.tripHeadsign,
-				minutes,
-				delay,
-				currentStopSequenceNumber,
-				userStopSequenceNumber,
-				isOutdated,
-				isEndOfRouteForUser,
-				stopTimes,
-			} satisfies Trip as Trip;
-		}),
-	);
+export function mapApiTrips(rawTrips: unknown[], routes: Route[], userStopId: number) {
+	const trips: StoredTrip[] = [];
+	for (const raw of rawTrips) {
+		if (!api.isApiTrip(raw)) continue;
+		const trip = raw;
+		const route = routes.find((route) => route.id === trip.routeId);
+		const userStop = trip.stopTimes.find((stop) => stop.stopId === userStopId);
+		if (!route || !userStop) continue;
+		const expectedTime = new Date(trip.oraArrivoEffettivaAFermataSelezionata);
+		const endOfRoute = trip.stopTimes.at(-1)!;
+		let isEndOfRouteForUser = endOfRoute.stopId === userStopId;
+		if (isEndOfRouteForUser && trip.stopTimes[0].stopId === endOfRoute.stopId) {
+			isEndOfRouteForUser =
+				trip.lastSequenceDetection > 1 || formatTime(expectedTime) === endOfRoute.arrivalTime;
+		}
+		const stopTimes: StopTime[] = trip.stopTimes.map((stop) => ({
+			name: getStopName(stop.stopId) || `Fermata ${stop.stopId}`,
+			time: stop.arrivalTime.substring(0, 5),
+		}));
+		const id = trip.tripId + '-' + Date.parse(trip.oraArrivoProgrammataAFermataSelezionata);
+		if (trips.some((item) => item.id === id)) continue;
+		trips.push({
+			id,
+			routeName: route.name,
+			routeColor: route.color,
+			destination: trip.tripHeadsign,
+			expectedAt: expectedTime.getTime(),
+			lastLiveAt: trip.delay === null ? null : Date.parse(trip.lastEventRecivedAt),
+			delay: trip.delay,
+			currentStopSequenceNumber: trip.lastSequenceDetection,
+			userStopSequenceNumber: isEndOfRouteForUser ? endOfRoute.stopSequence : userStop.stopSequence,
+			isEndOfRouteForUser,
+			stopTimes,
+		});
+	}
+	if (rawTrips.length && !trips.length) throw new Error('No valid bus trips in upstream response');
+	const partial = trips.length !== rawTrips.length;
+	if (partial) logger.warn('Skipped invalid or duplicate bus trips');
+	return { trips, partial };
 }
 
 function directionName(stop: Stop): string {

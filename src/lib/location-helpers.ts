@@ -41,20 +41,32 @@ export function distance(
 		return Infinity;
 	}
 
-	return Math.sqrt(
-		Math.pow(userCoordinates.latitude - stopCoordinates.latitude, 2) +
-			Math.pow(userCoordinates.longitude - stopCoordinates.longitude, 2),
-	);
+	const radians = (degrees: number) => (degrees * Math.PI) / 180;
+	const latitude = radians(stopCoordinates.latitude - userCoordinates.latitude);
+	const longitude = radians(stopCoordinates.longitude - userCoordinates.longitude);
+	const a =
+		Math.sin(latitude / 2) ** 2 +
+		Math.cos(radians(userCoordinates.latitude)) *
+			Math.cos(radians(stopCoordinates.latitude)) *
+			Math.sin(longitude / 2) ** 2;
+	return 6_371_000 * 2 * Math.asin(Math.sqrt(Math.min(1, a)));
 }
 
 export function getCurrentPosition(): Promise<GeolocationPosition> {
 	return new Promise((resolve, reject) => {
-		navigator.geolocation.getCurrentPosition(resolve, reject);
+		if (!navigator.geolocation) {
+			reject(new Error('Geolocation unavailable'));
+			return;
+		}
+		navigator.geolocation.getCurrentPosition(resolve, reject, {
+			timeout: 10_000,
+			maximumAge: 60_000,
+		});
 	});
 }
 
 export function handleGeolocationError(err: unknown) {
-	if (err instanceof GeolocationPositionError && err.code == err.PERMISSION_DENIED) {
+	if (typeof err === 'object' && err !== null && 'code' in err && err.code === 1) {
 		alert(
 			'La richiesta di accesso alla posizione è stata negata. Verifica le autorizzazioni al sito nelle impostazioni del tuo browser.',
 		);
@@ -69,7 +81,10 @@ export async function isGeolocationGranted() {
 		return false;
 	}
 
-	const permission = await navigator.permissions.query({ name: 'geolocation' });
-	// other values are 'prompt' and 'denied'
-	return permission.state === 'granted';
+	try {
+		const permission = await navigator.permissions.query({ name: 'geolocation' });
+		return permission.state === 'granted';
+	} catch {
+		return false;
+	}
 }

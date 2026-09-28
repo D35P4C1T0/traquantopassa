@@ -1,9 +1,12 @@
 <script lang="ts">
-	import { PUBLIC_BASE_URL } from '$env/static/public';
+	import { startRefresh } from '$lib/refresh';
+	import DataStatus from '$lib/components/DataStatus.svelte';
 	import Train from './Train.svelte';
 	import FooterNavigation from '$lib/components/FooterNavigation.svelte';
 	import { onMount, setContext } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { fetchBoard } from '$lib/refresh';
+	import type StationDetails from '$lib/StationDetails';
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import ModesSwitch from '$lib/components/ModesSwitch.svelte';
@@ -14,13 +17,19 @@
 
 	let { data } = $props();
 
-	let details = $derived(data.details);
+	let live = $state<StationDetails | null>(null);
+	let details = $derived(live ?? data.details);
+	$effect(() => {
+		if (data.details) {
+			live = null;
+			refreshFailed = false;
+		}
+	});
 	let showMore = $state(false);
 	let showMoreInProgress = $state(false);
 	let limit = $derived(showMore ? Infinity : 5);
 
-	const REFRESH_INTERVAL = 30 * 1000;
-	let timer: ReturnType<typeof setInterval>;
+	let refreshFailed = $state(false);
 
 	const trainState: ExpandedTripState = {
 		id: null,
@@ -28,27 +37,24 @@
 	const expandedTrain = $state(trainState);
 	setContext('expandedTrain', expandedTrain);
 
-	function onVisibilityChange() {
-		clearInterval(timer);
-		if (document.visibilityState != 'hidden') {
-			invalidateAll();
-			timer = setInterval(invalidateAll, REFRESH_INTERVAL);
-		}
-	}
-
-	onMount(() => {
-		timer = setInterval(invalidateAll, REFRESH_INTERVAL);
-		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => {
-			clearInterval(timer);
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-		};
-	});
+	onMount(() =>
+		startRefresh(
+			async () => {
+				const source = data.details;
+				const next = await fetchBoard<StationDetails>(
+					resolve('/api/stations/[station]', { station: source.canonicalSlug }) +
+						(source.isDeparture ? '' : '?arrivals=1'),
+				);
+				if (source === data.details) live = next;
+			},
+			(failed) => (refreshFailed = failed),
+		),
+	);
 </script>
 
 <svelte:head>
 	<title>Stazione di {details.name}</title>
-	<link rel="canonical" href="{PUBLIC_BASE_URL}/treni/{details.canonicalSlug}" />
+	<link rel="canonical" href="{data.baseUrl}/treni/{details.canonicalSlug}" />
 </svelte:head>
 
 <header>
@@ -61,6 +67,7 @@
 		{new Date(details.lastUpdatedAt).toLocaleTimeString(['it-IT'], {
 			hour: '2-digit',
 			minute: '2-digit',
+			timeZone: 'Europe/Rome',
 		})}
 	</div>
 
@@ -78,41 +85,49 @@
 	</div>
 </header>
 
-<main>
-	<div class="mt-10 flex flex-col">
-		{#if details.trains.length > 0}
-			{#key details.isDeparture}
-				<!-- key to prevent the (slow) transition on arrival/departure switch -->
-				{#each details.trains.slice(0, limit) as train (train.id)}
-					<div
-						animate:flip={{ delay: 300 }}
-						in:fade={{ delay: showMoreInProgress ? 0 : 800, duration: 300 }}
-						out:fade={{ duration: 300 }}
-					>
-						<Train {train} />
-					</div>
-				{/each}
-			{/key}
+<DataStatus
+	cachedAt={details.lastUpdatedAt}
+	stale={details.stale}
+	partial={details.partial}
+	metadataStale={details.metadataStale}
+	failed={refreshFailed}
+>
+	<main>
+		<div class="mt-10 flex flex-col">
+			{#if details.trains.length > 0}
+				{#key details.isDeparture}
+					<!-- key to prevent the (slow) transition on arrival/departure switch -->
+					{#each details.trains.slice(0, limit) as train (train.id)}
+						<div
+							animate:flip={{ delay: 300 }}
+							in:fade={{ delay: showMoreInProgress ? 0 : 800, duration: 300 }}
+							out:fade={{ duration: 300 }}
+						>
+							<Train {train} />
+						</div>
+					{/each}
+				{/key}
 
-			{#if !showMore && details.trains.length > limit}
-				<button
-					class="mt-2 cursor-pointer rounded-md bg-neutral-800 px-3 py-1 text-mid no-underline hover:bg-neutral-700"
-					onclick={() => {
-						showMore = true;
-						showMoreInProgress = true;
-						setTimeout(() => {
-							showMoreInProgress = false;
-						}, 50);
-					}}
-				>
-					Mostra tutti
-				</button>
+				{#if !showMore && details.trains.length > limit}
+					<button
+						class="mt-2 cursor-pointer rounded-md bg-neutral-800 px-3 py-1 text-mid no-underline hover:bg-neutral-700"
+						onclick={() => {
+							showMore = true;
+							showMoreInProgress = true;
+							setTimeout(() => {
+								showMoreInProgress = false;
+							}, 50);
+						}}
+					>
+						Mostra tutti
+					</button>
+				{/if}
+			{:else}
+				<div class="text-center">Nessun treno previsto</div>
 			{/if}
-		{:else}
-			<div class="text-center">Nessun treno previsto</div>
-		{/if}
-	</div>
-</main>
+		</div>
+	</main>
+</DataStatus>
 
 <footer class="my-12">
 	<div class="text-sm text-neutral-500">

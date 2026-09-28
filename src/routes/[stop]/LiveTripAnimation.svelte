@@ -18,6 +18,12 @@
 </script>
 
 <span
+	role="img"
+	aria-label={live === 'green'
+		? 'Dati in tempo reale'
+		: live === 'yellow'
+			? 'Dati non aggiornati'
+			: 'Orario programmato'}
 	bind:this={el}
 	onanimationstart={syncAnimation}
 	class="h-2 w-2 rounded-full {className}"

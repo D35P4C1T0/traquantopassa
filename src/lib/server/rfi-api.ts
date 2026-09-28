@@ -1,3 +1,4 @@
+import { fetchChecked, isRecord, text, finite } from './upstream';
 import * as cheerio from 'cheerio';
 import * as logger from '$lib/logger';
 import { elapsed } from '$lib/server/time-helpers';
@@ -44,16 +45,20 @@ export async function getStations(): Promise<RfiStation[]> {
 	logger.info(`Fetching stations from RFI map page`);
 	const start = performance.now();
 
-	const res = await fetch('https://www.rfi.it/it/stazioni.html', {
+	const res = await fetchChecked('https://www.rfi.it/it/stazioni.html', {
 		signal: AbortSignal.timeout(TIMEOUT),
 	});
 
 	const $ = cheerio.load(await res.text());
 
 	const stationsJson = $('input#stationsJSON').prop('value');
-	const parsedStations = JSON.parse(stationsJson) as RfiJsonStation[];
+	const parsedStations: unknown = JSON.parse(stationsJson ?? 'null');
 
-	if (!Array.isArray(parsedStations)) {
+	if (
+		!Array.isArray(parsedStations) ||
+		!parsedStations.length ||
+		!parsedStations.every(isRfiStation)
+	) {
 		throw new Error('Invalid stations JSON format, array expected');
 	}
 
@@ -77,7 +82,7 @@ export async function getStations(): Promise<RfiStation[]> {
 
 export async function getIdFromSlug(slug: string): Promise<string | null> {
 	logger.info(`Fetching station ID from RFI for "${slug}"`);
-	const res = await fetch(`https://www.rfi.it/it/stazioni/${slug}.html`, {
+	const res = await fetchChecked(`https://www.rfi.it/it/stazioni/${slug}.html`, {
 		signal: AbortSignal.timeout(TIMEOUT),
 	});
 
@@ -104,7 +109,7 @@ export async function getTrains(stationId: string, arrivals: boolean = false): P
 	logger.info(`Fetching trains for station ${stationId}`);
 	const start = performance.now();
 
-	const res = await fetch(
+	const res = await fetchChecked(
 		'https://iechub.rfi.it/ArriviPartenze/ArrivalsDepartures/Monitor?' + params.toString(),
 		{
 			signal: AbortSignal.timeout(TIMEOUT),
@@ -117,23 +122,33 @@ export async function getTrains(stationId: string, arrivals: boolean = false): P
 	return parseTrains(text);
 }
 
-function parseTrains(html: string): ApiTrain[] {
+export function parseTrains(html: string): ApiTrain[] {
 	const $ = cheerio.load(html);
 
+	// Recognize the board by its column labels, including when its body is empty.
+	const table = $('table')
+		.filter((_, element) => {
+			const headings = $(element).find('th').text().toLowerCase();
+			return (
+				headings.includes('treno') && headings.includes('ritardo') && headings.includes('binario')
+			);
+		})
+		.first();
+	if (!table.length || !table.find('tbody').length) throw new Error('Unrecognized RFI board');
 	const trains: ApiTrain[] = [];
 
-	$('tbody tr').each((i, elem) => {
+	table.find('tbody tr').each((i, elem) => {
 		const cells = $('td', elem);
 
 		const carrier = cells.eq(0).find('img').attr('alt');
-		if (!carrier) {
-			return;
-		}
+		if (!carrier || cells.length < 9) throw new Error('Invalid RFI train row');
 
 		const category = cells.eq(1).find('img').attr('alt') ?? '';
 		const number = cells.eq(2).text().trim();
 		const destination = cells.eq(3).text().trim();
 		const time = cells.eq(4).text().trim();
+		if (!number || !destination || !/^\d{1,2}:\d{2}$/.test(time))
+			throw new Error('Invalid RFI train fields');
 		const delay = cells.eq(5).text().trim();
 		const platform = cells.eq(6).text().trim();
 		const isBlinking = cells.eq(7).find('img').length > 0;
@@ -189,4 +204,25 @@ function parseTrains(html: string): ApiTrain[] {
 	});
 
 	return trains;
+}
+
+function isRfiStation(value: unknown): value is RfiJsonStation {
+	return (
+		isRecord(value) &&
+		text(value.name) &&
+		isRecord(value.loc) &&
+		text(value.loc.lat) &&
+		value.loc.lat.trim() !== '' &&
+		finite(+value.loc.lat) &&
+		Math.abs(+value.loc.lat) <= 90 &&
+		text(value.loc.lng) &&
+		value.loc.lng.trim() !== '' &&
+		finite(+value.loc.lng) &&
+		Math.abs(+value.loc.lng) <= 180 &&
+		text(value.pr) &&
+		text(value.rg) &&
+		text(value.ct) &&
+		text(value.lk) &&
+		/^[a-zA-Z0-9_-]+\.html$/.test(value.lk)
+	);
 }

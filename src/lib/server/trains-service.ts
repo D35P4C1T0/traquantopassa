@@ -1,34 +1,15 @@
-import NodeCache from 'node-cache';
+import { ResourceCache, LIVE_FRESH_MS, LIVE_MAX_AGE_MS } from './resource-cache';
 import * as api from './rfi-api';
 import type { Train } from '$lib/Train';
-import CachedItem from '$lib/server/CachedItem';
+const cache = new ResourceCache<Train[]>(LIVE_FRESH_MS, LIVE_MAX_AGE_MS);
 
-const cache = new NodeCache();
-
-const cacheDurationSeconds = 30;
-
-export async function getTrains(
-	stationId: string,
-	isDeparture = true,
-): Promise<CachedItem<Train[]>> {
-	let cachedItem = cache.get<CachedItem<Train[]>>(`trains-${stationId}-${isDeparture}`);
-	if (cachedItem) {
-		return cachedItem;
-	}
-
-	// Fetch from API
-	const apiTrains = await api.getTrains(stationId, !isDeparture);
-
-	const trains = mapTrains(apiTrains);
-	cachedItem = new CachedItem(trains);
-
-	// Save to cache
-	cache.set(`trains-${stationId}-${isDeparture}`, cachedItem, cacheDurationSeconds);
-
-	return cachedItem;
+export function getTrains(stationId: string, isDeparture = true) {
+	return cache.get(`${stationId}-${isDeparture}`, async () =>
+		mapTrains(await api.getTrains(stationId, !isDeparture)),
+	);
 }
 
-function mapTrains(apiTrains: api.ApiTrain[]): Train[] {
+export function mapTrains(apiTrains: api.ApiTrain[]): Train[] {
 	return apiTrains.map((train) => {
 		let isDelayed = false;
 		let delay = train.delay;

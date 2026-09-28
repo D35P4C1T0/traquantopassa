@@ -1,34 +1,20 @@
-import NodeCache from 'node-cache';
+import { ResourceCache, METADATA_FRESH_MS, METADATA_MAX_AGE_MS } from './resource-cache';
 import type { Route } from '$lib/Route';
 import * as api from '$lib/server/trentino-trasporti-api';
 import type { ApiRoute } from '$lib/server/trentino-trasporti-api';
 import * as logger from '$lib/logger';
 
-// TODO: should use stale data instead of simply expiring it
-const cache = new NodeCache({
-	stdTTL: 24 * 60 * 60, // 24 hours
-});
+const cache = new ResourceCache<Route[]>(METADATA_FRESH_MS, METADATA_MAX_AGE_MS, 1);
 
-const routesCacheKey = 'routes';
-
+export function getRoutesResource() {
+	return cache.get('routes', async () => {
+		logger.info('Fetching routes from API');
+		const routes = (await api.getRoutes()).map(apiRouteToRoute);
+		return routes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+	});
+}
 export async function getRoutes() {
-	// Return from cache if available
-	let routes = cache.get<Route[]>(routesCacheKey) ?? [];
-	if (routes.length) {
-		return routes;
-	}
-
-	logger.info('Fetching routes from API');
-	const apiRoutes = await api.getRoutes();
-
-	routes = apiRoutes.map((apiRoute) => apiRouteToRoute(apiRoute));
-
-	// Sort by route name (numeric)
-	routes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-
-	cache.set(routesCacheKey, routes);
-
-	return routes;
+	return (await getRoutesResource()).value;
 }
 
 function mapRouteColor(apiRoute: ApiRoute) {

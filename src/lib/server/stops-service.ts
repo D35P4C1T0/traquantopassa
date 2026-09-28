@@ -1,16 +1,12 @@
 import * as api from '$lib/server/trentino-trasporti-api';
-import NodeCache from 'node-cache';
+import { ResourceCache, METADATA_FRESH_MS, METADATA_MAX_AGE_MS } from './resource-cache';
 import type { StopGroup } from '$lib/StopGroup';
 import type { Stop } from '$lib/Stop';
 import type { Coordinates } from '$lib/Coordinates';
 import customSlugs from '$lib/server/custom-slugs';
 import customStopNames from '$lib/server/custom-stop-names';
 
-const cache = new NodeCache({
-	stdTTL: 24 * 60 * 60, // 24 hours
-});
-
-const stopGroupsCacheKey = 'stop-groups';
+const cache = new ResourceCache<StopGroup[]>(METADATA_FRESH_MS, METADATA_MAX_AGE_MS, 1);
 
 // Gets auto-updated whenever the stopGroups cache expires
 let stopNamesCache: Record<number, string> = {};
@@ -20,12 +16,14 @@ export function getStopName(id: number) {
 }
 
 export async function getStopGroups() {
-	// Return from cache if available
-	const cached = cache.get<StopGroup[]>(stopGroupsCacheKey);
-	if (cached) {
-		return cached;
-	}
+	return (await getStopGroupsResource()).value;
+}
 
+export function getStopGroupsResource() {
+	return cache.get('stops', loadStopGroups);
+}
+
+async function loadStopGroups() {
 	const stopGroups: StopGroup[] = [];
 
 	// Fetch stops from the API
@@ -61,7 +59,6 @@ export async function getStopGroups() {
 	stopGroups.sort((a, b) => a.name.localeCompare(b.name));
 
 	// Save to cache
-	cache.set(stopGroupsCacheKey, stopGroups);
 	stopNamesCache = newStopNamesCache;
 
 	return stopGroups;

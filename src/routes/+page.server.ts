@@ -6,9 +6,15 @@ import * as logger from '$lib/logger';
 
 export async function load() {
 	let stops, routes, rankings;
+	let metadataStale = false;
 	try {
-		stops = await stopsService.getStopGroups();
-		routes = await routesService.getRoutes();
+		const [stopResult, routeResult] = await Promise.all([
+			stopsService.getStopGroupsResource(),
+			routesService.getRoutesResource(),
+		]);
+		stops = stopResult.value;
+		routes = routeResult.value;
+		metadataStale = stopResult.stale || routeResult.stale;
 		rankings = await stopsRankingService.getRankings(stops);
 	} catch (e) {
 		logger.error('Error while fetching stops/routes', e);
@@ -19,5 +25,6 @@ export async function load() {
 		stops,
 		routes,
 		rankings,
+		metadataStale,
 	};
 }

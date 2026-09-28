@@ -6,7 +6,7 @@
 
 	let { minutes, dimmed }: Props = $props();
 
-	let el: HTMLDivElement;
+	let el: HTMLSpanElement;
 
 	function formatMinutes(minutes: number) {
 		if (minutes < 60) {
@@ -31,7 +31,7 @@
 	});
 </script>
 
-<div
+<span
 	bind:this={el}
 	onanimationstart={syncAnimation}
 	class="text-right text-xl {dimmed ? 'font-medium' : 'font-semibold'} whitespace-nowrap"
@@ -40,4 +40,4 @@
 	class:text-red-600={!dimmed && minutes === 0}
 >
 	{formatMinutes(minutes)}
-</div>
+</span>
