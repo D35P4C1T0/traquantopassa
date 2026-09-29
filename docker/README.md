@@ -2,7 +2,8 @@
 
 No database or persistent app storage is required. Favorites stay in the browser;
 server caches rebuild after a restart. Bus information needs Trentino Trasporti
-API credentials. Train data uses the public RFI service.
+API credentials, with built-in defaults in the server-side client and Compose.
+Train data uses the public RFI service.
 
 Requires Docker Engine with Compose 2.24.4+ (or Compose v5). OrbStack works on macOS.
 The pinned images support amd64 and arm64. Builds use Node 24 and pnpm 12 with a
@@ -20,7 +21,7 @@ chmod 600 .env.docker
 ```
 
 Edit `.env.docker`: set `DOMAIN` (hostname only), `TRAEFIK_NETWORK` to the existing
-network name, `TRAEFIK_ENTRYPOINT`, and bus credentials. Set
+network name, and `TRAEFIK_ENTRYPOINT`. Set
 `TRAEFIK_CERT_RESOLVER` to your existing resolver name, or leave empty when your
 Traefik already supplies certificates through its entrypoint/default TLS store.
 Use a unique `TRAEFIK_ROUTER` if hosting multiple copies. Point DNS at your proxy.
@@ -41,7 +42,7 @@ use Traefik's file provider with a privately reachable app endpoint instead.
 
 ## Alternative: standalone Caddy
 
-Use this **instead of** the Traefik overlay. Set `DOMAIN` and API credentials in
+Use this **instead of** the Traefik overlay. Set `DOMAIN` and optional API credential overrides in
 `.env.docker` as above. DNS A/AAAA records must point to this host. Allow incoming
 TCP 80/443; UDP 443 enables HTTP/3. These ports must be free.
 
@@ -61,7 +62,7 @@ socket access.
 
 ```sh
 cp .env.docker.example .env.docker
-# Edit credentials, then:
+# Edit settings as needed, then:
 docker compose --env-file .env.docker up -d --build --wait
 ```
 
@@ -69,31 +70,23 @@ Open http://localhost:3000. The base Compose binds only to loopback. If changing
 `APP_PORT`, also update `PUBLIC_BASE_URL` to match. Proxy overlays set the public
 URL and SvelteKit `ORIGIN` automatically from `DOMAIN`.
 
-## Optional mounted secrets
+## Credentials
 
-Environment variables are simplest, but visible to Docker administrators through
-container inspection. To keep bus credentials out of container configuration,
-create `secrets/api_username` and `secrets/api_password`, each containing one
-nonempty line. A final newline is removed; password spaces are preserved.
+Bus API credentials have built-in defaults. Set `API_USERNAME` and `API_PASSWORD`
+in `.env.docker` to override them, then recreate the container with
+`docker compose --env-file .env.docker up -d`. Unset or empty values use defaults.
+Caddy and Traefik overlays inherit these settings; keep your overlay flags when
+recreating the container.
 
-Keep the host `secrets` directory private (`chmod 700 secrets`). File mounts must
-be readable by container UID 1000: for example, use `chmod 444 secrets/api_*`
-inside that private directory. Compose file secrets are bind mounts, not an
-encrypted secret store; protect the host and backups accordingly.
+For file-based overrides, create `secrets/api_username` and `secrets/api_password`
+with one nonempty line each, readable by container UID 1000. Add
+`-f compose.secrets.yaml` last after your other Compose files. This overlay clears
+direct credential values and loads the mounted secrets instead. Override host
+paths with `API_USERNAME_SECRET_FILE` and `API_PASSWORD_SECRET_FILE` if needed.
 
-Add the secrets overlay last:
-
-```sh
-docker compose --env-file .env.docker \
-  -f compose.yaml -f compose.traefik.yaml -f compose.secrets.yaml \
-  up -d --build --wait
-```
-
-Replace the Traefik overlay with Caddy if desired. `API_USERNAME_SECRET_FILE` and
-`API_PASSWORD_SECRET_FILE` can override the host file paths. The entrypoint also
-supports `GOATCOUNTER_API_KEY_FILE` when explicitly mounted/configured. Conflicting
-direct/file values fail startup. `.env*` and secret directories are excluded from
-the build context; no build-time credentials are needed.
+The entrypoint supports `GOATCOUNTER_API_KEY_FILE` when explicitly mounted/configured.
+Conflicting direct/file values fail startup. `.env*` and secret directories are
+excluded from the build context.
 
 ## Operations and verification
 

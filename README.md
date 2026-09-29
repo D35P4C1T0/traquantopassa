@@ -7,8 +7,8 @@ Built with Svelte 5, SvelteKit 2, TypeScript, Tailwind CSS and Vite 8, served by
 
 - Node.js 24 (see `.nvmrc`).
 - pnpm 12.6.0 (pinned in `package.json`).
-- Trentino Trasporti API credentials for bus pages. Obtain these from the provider;
-  this repository does not provision accounts. Train pages use public RFI data.
+- Bus pages use built-in Trentino Trasporti API credentials, with optional overrides.
+  Train pages use public RFI data.
 - Outbound HTTPS access to the configured bus API, `www.rfi.it`, and `iechub.rfi.it`.
 - No database or Redis required.
 
@@ -18,7 +18,7 @@ replaced by `pnpm-lock.yaml`; CI uses a frozen install.
 
 ## Development
 
-Copy `.env.example` to `.env` and fill in bus credentials. Never commit secrets.
+Copy `.env.example` to `.env`; optionally override bus credentials. Never commit secrets.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -69,16 +69,17 @@ ORIGIN=https://transport.example
 HOST=127.0.0.1
 PORT=3000
 API_BASE_URL=https://app-tpl.tndigit.it
-API_USERNAME=your-username
-API_PASSWORD=your-password
 ```
 
 `PUBLIC_BASE_URL` controls canonical and sitemap URLs. If omitted, the request origin
 is used. Public URL and analytics configuration are read at runtime, so the same
 build can serve another domain without rebuilding. `.env.production` contains no
 author-specific domain. `ORIGIN` tells the Node adapter the externally visible origin.
-The three bus API settings are validated when bus data is requested; train pages
-and `/healthz` can operate independently of bus credentials.
+`API_BASE_URL` is validated when bus data is requested. Bus API credentials have built-in
+defaults in the server-side client and Docker Compose. Set `API_USERNAME` and
+`API_PASSWORD` in `.env` (local) or `.env.docker` (Docker) to override them.
+Unset or empty values use the defaults. Train pages and `/healthz` operate
+independently of bus credentials.
 
 Put an HTTPS reverse proxy in front of port 3000. Example Caddy configuration:
 

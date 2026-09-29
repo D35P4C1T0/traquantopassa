@@ -5,13 +5,12 @@ import { httpOrigin } from './deployment';
 import { fetchChecked, isRecord, finite, text, validDate, arrayOf } from './upstream';
 
 function credentials() {
-	for (const key of ['API_BASE_URL', 'API_USERNAME', 'API_PASSWORD']) {
-		if (!env[key]) throw new Error(`Missing ${key} environment variable`);
-	}
+	if (!env.API_BASE_URL) throw new Error('Missing API_BASE_URL environment variable');
+	const username = env.API_USERNAME || 'mittmobile';
+	const password = env.API_PASSWORD || 'ecGsp.RHB3';
 	return {
 		base: httpOrigin(env.API_BASE_URL!, 'API_BASE_URL'),
-		authorization:
-			'Basic ' + Buffer.from(env.API_USERNAME + ':' + env.API_PASSWORD).toString('base64'),
+		authorization: 'Basic ' + Buffer.from(username + ':' + password).toString('base64'),
 	};
 }
 

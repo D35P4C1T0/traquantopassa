@@ -23,8 +23,8 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
       ORIGIN: ${PUBLIC_BASE_URL:-http://localhost:3000}
       API_BASE_URL: ${API_BASE_URL:-https://app-tpl.tndigit.it}
-      API_USERNAME: ${API_USERNAME:-}
-      API_PASSWORD: ${API_PASSWORD:-}
+      API_USERNAME: ${API_USERNAME:-mittmobile}
+      API_PASSWORD: ${API_PASSWORD:-ecGsp.RHB3}
       GOATCOUNTER_URL: ${GOATCOUNTER_URL:-}
       GOATCOUNTER_API_KEY: ${GOATCOUNTER_API_KEY:-}
     logging:
