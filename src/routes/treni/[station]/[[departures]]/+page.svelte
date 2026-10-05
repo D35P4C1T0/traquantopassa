@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createBoardClock, timeAgo } from '$lib/clock.svelte';
 	import { startRefresh } from '$lib/refresh';
 	import DataStatus from '$lib/components/DataStatus.svelte';
 	import Train from './Train.svelte';
@@ -25,6 +26,7 @@
 			refreshFailed = false;
 		}
 	});
+	const clock = createBoardClock();
 	let showMore = $state(false);
 	let showMoreInProgress = $state(false);
 	let limit = $derived(showMore ? Infinity : 5);
@@ -63,12 +65,7 @@
 		<StationFavoriteButton stationId={details.id} className="pl-1" />
 	</h1>
 	<div class="mt-1 text-center text-sm">
-		aggiornato alle
-		{new Date(details.lastUpdatedAt).toLocaleTimeString(['it-IT'], {
-			hour: '2-digit',
-			minute: '2-digit',
-			timeZone: 'Europe/Rome',
-		})}
+		aggiornato {timeAgo(new Date(details.lastUpdatedAt).getTime(), clock.now)}
 	</div>
 
 	{#if details.stopSlug}

@@ -8,7 +8,7 @@ import type { Trip, StopTime } from '$lib/Trip';
 import * as logger from '$lib/logger';
 import { getStopName } from '$lib/server/stops-service';
 
-interface StoredTrip extends Omit<Trip, 'minutes' | 'isOutdated'> {
+interface StoredTrip extends Omit<Trip, 'minutes' | 'isOutdated' | 'lastUpdatedTimestamp'> {
 	expectedAt: number;
 	lastLiveAt: number | null;
 }
@@ -22,7 +22,7 @@ const cache = new ResourceCache<StoredDirection>(LIVE_FRESH_MS, LIVE_MAX_AGE_MS)
 export async function getTrips(stop: Stop) {
 	const metadata = await routesService.getRoutesResource();
 	const result = await cache.get(String(stop.id), async () => {
-		const rawTrips = await api.getTrips(stop.id, 15);
+		const rawTrips = await api.getTrips(stop.id, 16);
 		const mapped = mapApiTrips(rawTrips, metadata.value, stop.id);
 		return { name: directionName(stop), ...mapped };
 	});
@@ -31,6 +31,7 @@ export async function getTrips(stop: Stop) {
 		trips: result.value.trips.map(({ expectedAt, lastLiveAt, ...trip }) => ({
 			...trip,
 			minutes: Math.max(0, Math.ceil((expectedAt - Date.now()) / 60_000)),
+			lastUpdatedTimestamp: lastLiveAt,
 			isOutdated: lastLiveAt !== null && Date.now() - lastLiveAt > 300_000,
 		})),
 	};
@@ -71,7 +72,13 @@ export function mapApiTrips(rawTrips: unknown[], routes: Route[], userStopId: nu
 			expectedAt: expectedTime.getTime(),
 			lastLiveAt: trip.delay === null ? null : Date.parse(trip.lastEventRecivedAt),
 			delay: trip.delay,
-			currentStopSequenceNumber: trip.lastSequenceDetection,
+			// A live bus with no next stop is still completing its previous trip.
+			currentStopSequenceNumber:
+				trip.stopNext === 0 && trip.delay !== null ? -1 : trip.lastSequenceDetection,
+			vehicleId:
+				Number.isInteger(trip.matricolaBus) && trip.matricolaBus! >= 0
+					? String(trip.matricolaBus)
+					: null,
 			userStopSequenceNumber: isEndOfRouteForUser ? endOfRoute.stopSequence : userStop.stopSequence,
 			isEndOfRouteForUser,
 			stopTimes,
@@ -80,7 +87,16 @@ export function mapApiTrips(rawTrips: unknown[], routes: Route[], userStopId: nu
 	if (rawTrips.length && !trips.length) throw new Error('No valid bus trips in upstream response');
 	const partial = trips.length !== rawTrips.length;
 	if (partial) logger.warn('Skipped invalid or duplicate bus trips');
-	return { trips, partial };
+	// Provider can associate a bus with its next trip, producing wildly early arrivals.
+	// Apply this after validation: intentionally hidden trips are valid empty results,
+	// not malformed responses or missing data.
+	const visibleTrips = trips.filter((trip) => {
+		const distanceInStops = trip.userStopSequenceNumber - trip.currentStopSequenceNumber;
+		const isFarAhead = distanceInStops < -2;
+		const isEndOfLine = trip.currentStopSequenceNumber === trip.stopTimes.length;
+		return !(trip.delay !== null && trip.delay < -5 && (isFarAhead || isEndOfLine));
+	});
+	return { trips: visibleTrips, partial };
 }
 
 function directionName(stop: Stop): string {
@@ -88,6 +104,8 @@ function directionName(stop: Stop): string {
 		return `» Periferia`;
 	} else if (stop.code.endsWith('x')) {
 		return `» Centro`;
+	} else if (stop.code.endsWith('c')) {
+		return 'Capolinea';
 	} else if (stop.code.endsWith('s')) {
 		return `Sud`;
 	} else if (stop.code.endsWith('n')) {

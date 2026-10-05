@@ -142,6 +142,11 @@ and are cached for five minutes.
 - JSON board polling runs every 30 seconds after a completed refresh, pauses in hidden tabs,
   and resumes immediately when visible. Failed updates and partial data are labeled.
 - Bus waiting times are recalculated from absolute arrival timestamps when served.
+- Bus and train boards show relative update ages; bus details include the vehicle number
+  when available and the age of its last position. Position indicators age between polls.
+- Bus boards distinguish vehicles on a previous trip and completed trips. Suspicious
+  predictions more than five minutes early are hidden when the bus is over two stops
+  beyond the selected stop or has completed its route. Each direction expands separately.
 - Caches are bounded, process-local, and lost on restart. Multiple instances maintain
   independent caches; deploy one instance unless there is a demonstrated scaling need.
 - Favorites and tab preferences stay in each visitor's browser. Location is used

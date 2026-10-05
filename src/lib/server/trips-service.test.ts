@@ -67,3 +67,55 @@ it('recalculates cached countdown and live age without fetching again', async ()
 	expect(stale.value.trips[0].isOutdated).toBe(true);
 	expect(stale.cachedAt).toEqual(first.cachedAt);
 });
+
+it('recognizes previous trips and treats vehicle IDs as optional metadata', () => {
+	const previous = { ...fixture.trips[0], stopNext: 0, matricolaBus: 1234 };
+	const mapped = mapApiTrips([previous], [route], 1).trips[0];
+	expect(mapped.currentStopSequenceNumber).toBe(-1);
+	expect(mapped.vehicleId).toBe('1234');
+	for (const matricolaBus of [null, undefined, 'bad', -1, 1.5]) {
+		expect(mapApiTrips([{ ...previous, matricolaBus }], [route], 1).trips[0].vehicleId).toBeNull();
+	}
+	const scheduled = { ...previous, delay: null, lastSequenceDetection: 0 };
+	expect(mapApiTrips([scheduled], [route], 1).trips[0].currentStopSequenceNumber).toBe(0);
+});
+
+it('filters bogus early predictions without marking intentional empty boards as invalid', () => {
+	const trip = {
+		...fixture.trips[0],
+		delay: -6,
+		lastSequenceDetection: 4,
+		stopTimes: Array.from({ length: 5 }, (_, i) => ({
+			stopId: i + 1,
+			stopSequence: i + 1,
+			arrivalTime: '12:08:00',
+		})),
+	};
+	expect(mapApiTrips([trip], [route], 1)).toEqual({ trips: [], partial: false });
+	// The thresholds are strict: five minutes early or only two stops ahead stay visible.
+	expect(mapApiTrips([{ ...trip, delay: -5 }], [route], 1).trips).toHaveLength(1);
+	expect(mapApiTrips([{ ...trip, lastSequenceDetection: 3 }], [route], 1).trips).toHaveLength(1);
+	expect(mapApiTrips([{ ...trip, lastSequenceDetection: 5 }], [route], 4).trips).toHaveLength(0);
+	expect(mapApiTrips([{ ...trip, stopNext: 0 }], [route], 1).trips).toHaveLength(1);
+	expect(mapApiTrips([trip, {}], [route], 1)).toEqual({ trips: [], partial: true });
+	expect(() => mapApiTrips([{}], [route], 1)).toThrow('No valid');
+});
+
+it('names terminal directions and exposes live timestamps without requiring vehicle data', async () => {
+	vi.spyOn(api, 'getTrips').mockResolvedValue(fixture.trips);
+	vi.spyOn(routes, 'getRoutesResource').mockResolvedValue({
+		value: [route],
+		cachedAt: new Date(),
+		stale: false,
+	});
+	const result = await getTrips({
+		id: 1,
+		code: '1c',
+		coordinates: { latitude: 46, longitude: 11 },
+	});
+	expect(result.value.name).toBe('Capolinea');
+	expect(result.value.trips[0].lastUpdatedTimestamp).toBe(
+		Date.parse(fixture.trips[0].lastEventRecivedAt),
+	);
+	expect(result.value.trips[0].vehicleId).toBeNull();
+});

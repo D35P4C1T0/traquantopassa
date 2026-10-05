@@ -14,7 +14,7 @@ test('favorites persist without navigating and keyboard opens trip', async ({ pa
 	await trip.focus();
 	await page.keyboard.press('Space');
 	await expect(trip).toHaveAttribute('aria-expanded', 'true');
-	await expect(page.getByText('La tua fermata 📍', { exact: true })).toBeVisible();
+	await expect(page.getByText('📍 La tua fermata', { exact: true })).toBeVisible();
 	await expect
 		.poll(() =>
 			page
@@ -111,4 +111,45 @@ test('failed polling preserves board, hides expired predictions, and recovers', 
 	await page.clock.fastForward(31_000);
 	await expect(page.getByRole('button', { name: /Povo/ })).toBeVisible();
 	await expect(page.getByText(/Dati troppo vecchi/)).not.toBeVisible();
+});
+
+test('directions expand independently and position age updates between polls', async ({ page }) => {
+	await page.clock.install();
+	await page.goto('/90001');
+	const snapshot = await (await page.request.get('/api/stops/90001')).json();
+	const now = await page.evaluate(() => Date.now());
+	const original = snapshot.details.directions[0].trips[0];
+	snapshot.details.lastUpdatedAt = new Date(now).toISOString();
+	snapshot.details.directions = ['Nord', 'Sud'].map((name, direction) => ({
+		name,
+		trips: Array.from({ length: 7 }, (_, i) => ({
+			...original,
+			id: `${direction}-${i}`,
+			destination: `${name} ${i + 1}`,
+			vehicleId: '1234',
+			lastUpdatedTimestamp: now - 299_000,
+			isOutdated: false,
+			currentStopSequenceNumber: i === 0 ? -1 : original.stopTimes.length,
+		})),
+	}));
+	await page.route('**/api/stops/*', (route) => route.fulfill({ json: snapshot }));
+	await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+	await expect(page.getByRole('button', { name: /Nord 1/ })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Mostra altri 2' })).toHaveCount(2);
+	await page.getByRole('button', { name: 'Mostra altri 2' }).first().click();
+	await expect(page.getByRole('button', { name: /Nord 7/ })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Sud 7/ })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /Nord 1/ })).toContainText(
+		'sulla corsa precedente',
+	);
+	await expect(page.getByRole('button', { name: /Nord 2/ })).toContainText('corsa terminata');
+	const trip = page.getByRole('button', { name: /Nord 1/ });
+	await trip.click();
+	await expect(page.getByText('Bus 1234', { exact: true })).toBeVisible();
+	await expect(page.getByText('ultima posizione 4 minuti fa', { exact: true })).toBeVisible();
+	await expect(trip.locator('.bg-green-500')).toHaveCount(1);
+	await page.clock.fastForward(10_000);
+	await expect(page.getByText('aggiornato 10 secondi fa', { exact: true })).toBeVisible();
+	await expect(page.getByText('ultima posizione 5 minuti fa', { exact: true })).toBeVisible();
+	await expect(trip.locator('.bg-yellow-500')).toHaveCount(1);
 });

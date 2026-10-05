@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { getContext, onMount } from 'svelte';
+	import { timeAgo, type TimeState } from '$lib/clock.svelte';
 	import type { Trip } from '$lib/Trip';
 
 	interface Props {
@@ -8,6 +9,7 @@
 
 	let { trip }: Props = $props();
 
+	const clock = getContext<TimeState>('timeState');
 	const stopElements: (HTMLDivElement | undefined)[] = $state([]);
 
 	onMount(() => {
@@ -25,7 +27,21 @@
 <!-- This wrapper is needed to be able to add a bottom padding and avoid the slide transition jerkiness -->
 <div class="pt-1 pb-3">
 	<div class="rounded-lg border border-neutral-700 bg-neutral-800">
-		<div class="flex h-40 flex-col gap-y-2.5 overflow-y-auto px-4 py-3">
+		<div
+			class="flex flex-wrap items-center justify-between gap-x-2 border-b border-neutral-700 px-4 py-1.5"
+		>
+			{#if trip.vehicleId !== null}
+				<span class="font-semibold">Bus {trip.vehicleId}</span>
+			{/if}
+			{#if trip.lastUpdatedTimestamp !== null}
+				<span class="text-sm text-neutral-400"
+					>ultima posizione {timeAgo(trip.lastUpdatedTimestamp, clock.now, 'appena ricevuta')}</span
+				>
+			{:else}
+				<span class="text-sm text-neutral-400">Dati in tempo reale non disponibili</span>
+			{/if}
+		</div>
+		<div class="flex max-h-50 flex-col gap-y-2.5 overflow-y-auto px-4 py-3">
 			<!-- eslint-disable-next-line svelte/require-each-key -->
 			{#each trip.stopTimes as stopTime, i}
 				{@const wasPassed = i < trip.currentStopSequenceNumber}
@@ -42,17 +58,14 @@
 							style:background-color={wasPassed ? trip.routeColor : ''}
 						></span>
 
-						<!-- Show the vertical line connecting to the next stop.
-								 Since the trip is removed from the list once the bus reaches the end of route,
-								 there is no need to hide the connecting element if it's the last one. -->
-						{#if wasPassed}
+						{#if wasPassed && i < trip.stopTimes.length - 1}
 							<div class="absolute top-3 h-4 w-1.5" style:background-color={trip.routeColor}></div>
 						{/if}
 					</div>
 
 					<div class="leading-none whitespace-nowrap">
 						{#if i === trip.userStopSequenceNumber - 1}
-							<span class="font-semibold">La tua fermata 📍</span>
+							<span class="font-semibold">📍 La tua fermata</span>
 						{:else}
 							{stopTime.name}
 						{/if}

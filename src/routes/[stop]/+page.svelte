@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { startRefresh } from '$lib/refresh';
 	import DataStatus from '$lib/components/DataStatus.svelte';
-	import Trip from './Trip.svelte';
+	import Direction from './Direction.svelte';
+	import { createBoardClock, timeAgo } from '$lib/clock.svelte';
 	import FooterNavigation from '$lib/components/FooterNavigation.svelte';
 	import { onMount, setContext } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { fetchBoard } from '$lib/refresh';
 	import type StopGroupDetails from '$lib/StopGroupDetails';
-	import { flip } from 'svelte/animate';
-	import { fade } from 'svelte/transition';
 	import ModesSwitch from '$lib/components/ModesSwitch.svelte';
 	import LiveTripAnimation from './LiveTripAnimation.svelte';
 	import StopFavoriteButton from '$lib/components/StopFavoriteButton.svelte';
@@ -25,9 +24,8 @@
 			refreshFailed = false;
 		}
 	});
-	let showMore = $state(false);
-	let limit = $derived(showMore || details.directions.length < 2 ? 15 : 5);
-	let showMoreInProgress = $state(false);
+	const clock = createBoardClock();
+	setContext('timeState', clock);
 
 	const tripState: ExpandedTripState = {
 		id: null,
@@ -64,12 +62,7 @@
 		<StopFavoriteButton stopCode={details.code} className="pl-2" />
 	</div>
 	<div class="mt-1 text-center text-sm">
-		aggiornato alle
-		{new Date(details.lastUpdatedAt).toLocaleTimeString(['it-IT'], {
-			hour: '2-digit',
-			minute: '2-digit',
-			timeZone: 'Europe/Rome',
-		})}
+		aggiornato {timeAgo(new Date(details.lastUpdatedAt).getTime(), clock.now)}
 	</div>
 
 	{#if details.trainStationSlug}
@@ -91,46 +84,12 @@
 	failed={refreshFailed}
 >
 	<main>
-		<!-- eslint-disable-next-line svelte/require-each-key -->
-		{#each details.directions as direction}
-			<div class="mt-10 flex flex-col">
-				{#if direction.name && details.directions.length > 1}
-					<div class="mx-auto mb-4 w-fit text-center text-lg font-medium uppercase">
-						{direction.name}
-					</div>
-				{/if}
-				{#if direction.trips.length > 0}
-					{#each direction.trips.slice(0, limit) as trip (trip.id)}
-						<div
-							animate:flip={{
-								delay: 0,
-								duration: 300,
-							}}
-							in:fade={{ delay: showMoreInProgress ? 0 : 800, duration: 300 }}
-							out:fade={{ duration: 300 }}
-						>
-							<Trip {trip} stale={details.stale || refreshFailed} />
-						</div>
-					{/each}
-
-					{#if !showMore && direction.trips.length > limit}
-						<button
-							class="mt-2 cursor-pointer rounded-md bg-neutral-800 px-3 py-1 text-mid no-underline hover:bg-neutral-700"
-							onclick={() => {
-								showMore = true;
-								showMoreInProgress = true;
-								setTimeout(() => {
-									showMoreInProgress = false;
-								}, 50);
-							}}
-						>
-							Mostra altri {direction.trips.length - limit}
-						</button>
-					{/if}
-				{:else}
-					<div class="text-center">Nessun autobus previsto per oggi</div>
-				{/if}
-			</div>
+		{#each details.directions as direction, i (`${details.code}-${i}`)}
+			<Direction
+				{direction}
+				alone={details.directions.length < 2}
+				stale={details.stale || refreshFailed}
+			/>
 		{/each}
 	</main>
 </DataStatus>

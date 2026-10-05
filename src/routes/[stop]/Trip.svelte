@@ -6,6 +6,7 @@
 	import BusTripDetail from './BusTripDetail.svelte';
 	import { slide } from 'svelte/transition';
 	import { getContext } from 'svelte';
+	import type { TimeState } from '$lib/clock.svelte';
 
 	interface Props {
 		trip: Trip;
@@ -14,6 +15,10 @@
 
 	let { trip, stale = false }: Props = $props();
 
+	const clock = getContext<TimeState>('timeState');
+	const outdated = $derived(
+		trip.lastUpdatedTimestamp !== null && clock.now - trip.lastUpdatedTimestamp > 300_000,
+	);
 	let expandedTrip = getContext<ExpandedTripState>('expandedTrip');
 	let expanded = $derived(expandedTrip.id === trip.id);
 
@@ -49,8 +54,12 @@
 			{#if trip.delay != null}
 				{@const distanceInStops = trip.userStopSequenceNumber - trip.currentStopSequenceNumber}
 
-				{#if trip.currentStopSequenceNumber === 0}
+				{#if trip.currentStopSequenceNumber === -1}
+					sulla corsa precedente
+				{:else if trip.currentStopSequenceNumber === 0}
 					non ancora partito
+				{:else if trip.currentStopSequenceNumber === trip.stopTimes.length}
+					corsa terminata
 				{:else if distanceInStops < 0}
 					oltre la tua fermata
 				{:else if distanceInStops === 0}
@@ -78,7 +87,7 @@
 	</span>
 	<PulsingMinutes minutes={trip.minutes} dimmed={trip.isEndOfRouteForUser} />
 	<LiveTripAnimation
-		live={trip.delay != null ? (trip.isOutdated || stale ? 'yellow' : 'green') : null}
+		live={trip.delay != null ? (outdated || trip.isOutdated || stale ? 'yellow' : 'green') : null}
 	/>
 </button>
 
