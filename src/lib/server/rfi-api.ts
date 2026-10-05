@@ -140,6 +140,9 @@ export function parseTrains(html: string): ApiTrain[] {
 	table.find('tbody tr').each((i, elem) => {
 		const cells = $('td', elem);
 
+		// RFI pads boards with nine-cell empty rows, sometimes containing empty divs.
+		if (cells.length === 9 && !cells.text().trim() && !cells.find('img').length) return;
+
 		const carrier = cells.eq(0).find('img').attr('alt');
 		if (!carrier || cells.length < 9) throw new Error('Invalid RFI train row');
 

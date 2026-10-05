@@ -17,6 +17,25 @@ it('distinguishes valid empty board from error or malformed HTML', () => {
 	expect(() => parseTrains('<html>Maintenance</html>')).toThrow('Unrecognized');
 	expect(() => parseTrains(fixture.replace('12:30', 'invalid'))).toThrow('Invalid');
 });
+it('ignores RFI padding rows in populated and empty boards', () => {
+	const padding = `<tr>${'<td> \n<div> </div></td>'.repeat(9)}</tr>`;
+	expect(parseTrains(fixture.replace('</tbody>', padding.repeat(4) + '</tbody>'))).toEqual(
+		parseTrains(fixture),
+	);
+	expect(
+		parseTrains(
+			fixture.replace(/<tbody>[\s\S]*?<\/tbody>/, `<tbody>${padding.repeat(15)}</tbody>`),
+		),
+	).toEqual([]);
+});
+it('still rejects populated rows missing a carrier and malformed empty rows', () => {
+	expect(() => parseTrains(fixture.replace('<img alt="TRENITALIA" />', ''))).toThrow(
+		'Invalid RFI train row',
+	);
+	expect(() => parseTrains(fixture.replace('</tbody>', '<tr><td></td></tr></tbody>'))).toThrow(
+		'Invalid RFI train row',
+	);
+});
 it('rejects upstream error status even with otherwise valid HTML', async () => {
 	vi.stubGlobal(
 		'fetch',
